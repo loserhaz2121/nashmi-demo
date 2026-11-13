@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>نشمي رايد الأردن - محاكاة العميل والكابتن</title>
+  <style>
+    :root {
+      --jo-black: #121212;
+      --jo-white: #ffffff;
+      --jo-bg: #f4f6f8;
+      --jo-red: #ce1126;
+      --jo-green: #007a3d;
+      --jo-grey: #6b7280;
+    }
+    * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Arial, sans-serif; }
+    body {
+      margin: 0;
+      padding: 10px;
+      background: #1e242b;
+      color: var(--jo-black);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .top-bar {
+      color: #fff;
+      text-align: center;
+      margin-bottom: 14px;
+      max-width: 820px;
+    }
+    .top-bar h1 { margin: 0 0 6px; font-size: 18px; }
+    .top-bar p { margin: 0 0 10px; font-size: 12px; color: #cbd5e1; }
+    .top-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+    .pill-btn {
+      background: var(--jo-green);
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+    }
+    .pill-btn.red { background: var(--jo-red); }
+    .phones-wrapper {
+      display: flex;
+      gap: 24px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-start;
+      width: 100%;
+    }
+    .phone {
+      width: 340px;
+      max-width: 100%;
+      height: 640px;
+      background: var(--jo-bg);
+      border: 8px solid #0b0d10;
+      border-radius: 32px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .notch {
+      width: 110px;
+      height: 16px;
+      background: #0b0d10;
+      border-bottom-left-radius: 12px;
+      border-bottom-right-radius: 12px;
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 20;
+    }
+    .jo-header {
+      background: var(--jo-black);
+      color: #fff;
+      padding: 22px 14px 12px;
+      border-bottom: 4px solid var(--jo-green);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .flag-icon {
+      width: 42px;
+      height: 28px;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255,255,255,0.25);
+      flex-shrink: 0;
+    }
+    .flag-stripe { height: 33.33%; width: 100%; }
+    .flag-triangle {
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 0;
+      height: 0;
+      border-top: 14px solid transparent;
+      border-bottom: 14px solid transparent;
+      border-right: 22px solid var(--jo-red);
+    }
+    .flag-star {
+      position: absolute;
+      top: 8px;
+      right: 4px;
+      color: #fff;
+      font-size: 9px;
+      line-height: 1;
+    }
+    .header-title { font-weight: bold; font-size: 15px; }
+    .header-sub { font-size: 11px; color: #cbd5e1; }
+    .status-strip {
+      padding: 8px 14px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #27272a;
+      transition: background 0.3s;
+    }
+    .status-strip.online { background: var(--jo-green); }
+    .map-area {
+      flex: 1;
+      position: relative;
+      background: #e5ece9;
+      overflow: hidden;
+    }
+    svg.amman-map { width: 100%; height: 100%; display: block; }
+    .landmark-chips {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      left: 10px;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      z-index: 5;
+    }
+    .chip {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 14px;
+      padding: 4px 9px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: 600;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    .chip.active {
+      background: var(--jo-red);
+      color: #fff;
+      border-color: var(--jo-red);
+    }
+    .sos-btn {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--jo-red);
+      color: #fff;
+      border: 2px solid #fff;
+      font-weight: bold;
+      font-size: 10px;
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+      z-index: 6;
+    }
+    .bottom-sheet {
+      background: #fff;
+      padding: 14px;
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.12);
+      z-index: 8;
+    }
+    .price-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .price-big { font-size: 22px; font-weight: bold; color: var(--jo-green); }
+    .save-badge {
+      background: #e6f4ec;
+      color: var(--jo-green);
+      border: 1px solid var(--jo-green);
+      border-radius: 10px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: bold;
+      text-align: center;
+    }
+    .meta-line { font-size: 12px; color: var(--jo-grey); margin-bottom: 10px; }
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      color: #fff;
+      background: var(--jo-red);
+    }
+    .btn.green { background: var(--jo-green); }
+    .btn.black { background: var(--jo-black); }
+    .btn.outline {
+      background: transparent;
+      color: var(--jo-red);
+      border: 1.5px solid var(--jo-red);
+    }
+    .toggle-switch {
+      cursor: pointer;
+      background: #fff;
+      color: var(--jo-black);
+      border: none;
+      border-radius: 14px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .incoming-card {
+      position: absolute;
+      bottom: 14px;
+      left: 12px;
+      right: 12px;
+      background: #fff;
+      border: 2px solid var(--jo-red);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      z-index: 15;
+      animation: pulseBorder 1s infinite alternate;
+    }
+    @keyframes pulseBorder {
+      from { border-color: var(--jo-red); }
+      to { border-color: var(--jo-green); }
+    }
+    .modal-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.65);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 30;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 16px;
+      width: 100%;
+      text-align: center;
+    }
+    .modal-box input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 15px;
+      direction: ltr;
+    }
+    .sms-toast {
+      background: #121212;
+      color: #fff;
+      padding: 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      margin-bottom: 8px;
+      border-right: 4px solid var(--jo-green);
+    }
+  </style>
+</head>
+<body>
+  <div class="top-bar">
+    <h1>محاكاة حية: تطبيق نشمي رايد الأردن (عميل + كابتن)</h1>
+    <p>1) فعّل اتصال الكابتن وأكّد الخوذة &larr; 2) اختر وجهة العميل واطلب الدراجة &larr; 3) اقبل الطلب وتابع الحركة لحظياً!</p>
+    <div class="top-actions">
+      <button class="pill-btn" onclick="openOtpModal()">تجربة التحقق برقم أردني (OTP)</button>
+      <button class="pill-btn red" onclick="resetDemo()">إعادة تشغيل التجربة</button>
+    </div>
+  </div>
+
+  <div class="phones-wrapper">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="jo-header">
+        <div class="flag-icon">
+          <div class="flag-stripe" style="background:#121212"></div>
+          <div class="flag-stripe" style="background:#fff"></div>
+          <div class="flag-stripe" style="background:#007a3d"></div>
+          <div class="flag-triangle"></div>
+          <div class="flag-star">★</div>
+        </div>
+        <div>
+          <div class="header-title">نشمي رايد — العميل</div>
+          <div class="header-sub" id="client-phone-label">موثق: +962 79 412 8890</div>
+        </div>
+      </div>
+      <div class="map-area">
+        <div class="landmark-chips" id="landmark-chips"></div>
+        <button class="sos-btn" onclick="alert('طوارئ (911): تم مشاركة موقعك الحالي في عمّان!')">SOS</button>
+        <svg class="amman-map" viewBox="0 0 320 380" id="client-svg"></svg>
+      </div>
+      <div class="bottom-sheet" id="client-sheet"></div>
+      <div class="modal-overlay" id="otp-modal">
+        <div class="modal-box">
+          <h3 style="margin:0 0 6px; font-size:16px">الدخول بالرقم الأردني (OTP)</h3>
+          <div id="sms-banner" class="sms-toast" style="display:none">رسالة SMS: رمز التحقق لنشمي رايد هو <b>482910</b></div>
+          <input type="text" id="jo-phone-input" value="0794128890" placeholder="079XXXXXXX" />
+          <input type="text" id="otp-input" placeholder="أدخل رمز OTP (482910)" style="display:none" />
+          <button class="btn" id="otp-action-btn" onclick="handleOtpStep()">إرسال رمز OTP</button>
+          <button class="btn outline" style="margin-top:8px" onclick="closeOtpModal()">إغلاق</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="jo-header">
+        <div class="flag-icon">
+          <div class="flag-stripe" style="background:#121212"></div>
+          <div class="flag-stripe" style="background:#fff"></div>
+          <div class="flag-stripe" style="background:#007a3d"></div>
+          <div class="flag-triangle"></div>
+          <div class="flag-star">★</div>
+        </div>
+        <div>
+          <div class="header-title">نشمي كابتن — السائق</div>
+          <div class="header-sub">أحمد النشامى • Yamaha NMAX (عمولة 10%)</div>
+        </div>
+      </div>
+      <div class="status-strip" id="captain-status-strip">
+        <div>
+          <button class="toggle-switch" id="captain-toggle-btn" onclick="toggleCaptainOnline()">تفعيل الاتصال</button>
+          <span id="captain-status-text" style="margin-right:6px">غير متصل</span>
+        </div>
+        <div id="captain-earnings">الأرباح: 0.00 د</div>
+      </div>
+      <div class="map-area">
+        <svg class="amman-map" viewBox="0 0 320 380" id="captain-svg"></svg>
+        <div id="captain-incoming-wrap"></div>
+      </div>
+      <div class="bottom-sheet" id="captain-sheet"></div>
+      <div class="modal-overlay" id="helmet-modal">
+        <div class="modal-box">
+          <div style="font-size:36px">🪖</div>
+          <h3 style="margin:6px 0">تأكيد السلامة المرورية</h3>
+          <p style="font-size:13px; color:#555">هل ترتدي خوذة الأمان وتتوفر معك خوذة إضافية نظيفة للراكب؟</p>
+          <button class="btn green" onclick="confirmHelmet()">نعم، جاهز وآمن للعمل</button>
+          <button class="btn outline" style="margin-top:8px" onclick="closeHelmetModal()">إلغاء</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PICKUP = { name: 'العبدلي (موقعك)', x: 175, y: 175 };
+    const LANDMARKS = [
+      { id: 'uni', name: 'الجامعة الأردنية', x: 95, y: 70, km: 7.4, min: 14 },
+      { id: '7th', name: 'الدوار السابع', x: 60, y: 230, km: 6.2, min: 12 },
+      { id: 'downtown', name: 'وسط البلد', x: 255, y: 245, km: 3.5, min: 8 },
+      { id: 'abdoun', name: 'عبدون', x: 135, y: 295, km: 4.8, min: 10 },
+    ];
+    let state = {
+      selectedDest: null, captainOnline: false, rideStatus: 'idle',
+      bikePos: { x: 245, y: 110 }, fareJod: 0, carFareJod: 0, savingsPct: 0,
+      captainEarnings: 0, timerSec: 15,
+    };
+    let moveInterval = null, countdownInterval = null;
+
+    function calcFare(km, min) {
+      let moto = 0.25 + (km * 0.16) + (min * 0.03);
+      if (moto < 0.85) moto = 0.85;
+      moto = Math.round(moto * 20) / 20;
+      let car = 0.45 + (km * 0.316) + (min * 0.06);
+      if (car < 1.50) car = 1.50;
+      return { moto: moto.toFixed(2), car: car.toFixed(2), savings: Math.round(((car - moto) / car) * 100) };
+    }
+    function selectDest(id) {
+      if (state.rideStatus !== 'idle') return;
+      const dest = LANDMARKS.find(l => l.id === id);
+      const f = calcFare(dest.km, dest.min);
+      state.selectedDest = dest; state.fareJod = f.moto; state.carFareJod = f.car; state.savingsPct = f.savings;
+      renderAll();
+    }
+    function requestRide() {
+      if (!state.selectedDest) return;
+      state.rideStatus = 'pending'; state.timerSec = 15;
+      clearInterval(countdownInterval);
+      countdownInterval = setInterval(() => {
+        if (state.rideStatus !== 'pending') { clearInterval(countdownInterval); return; }
+        state.timerSec = state.timerSec <= 1 ? 15 : state.timerSec - 1;
+        renderCaptain();
+      }, 1000);
+      renderAll();
+    }
+    function cancelRide() { clearInterval(countdownInterval); clearInterval(moveInterval); state.rideStatus = 'idle'; renderAll(); }
+    function toggleCaptainOnline() {
+      if (state.rideStatus !== 'idle' && state.rideStatus !== 'pending') return;
+      if (!state.captainOnline) document.getElementById('helmet-modal').classList.add('show');
+      else { state.captainOnline = false; renderAll(); }
+    }
+    function confirmHelmet() { state.captainOnline = true; closeHelmetModal(); renderAll(); }
+    function closeHelmetModal() { document.getElementById('helmet-modal').classList.remove('show'); }
+    function acceptRide() { clearInterval(countdownInterval); state.rideStatus = 'accepted'; animateBike(state.bikePos, PICKUP); renderAll(); }
+    function markArrived() { clearInterval(moveInterval); state.bikePos = { x: PICKUP.x, y: PICKUP.y }; state.rideStatus = 'arrived'; renderAll(); }
+    function startTrip() { state.rideStatus = 'started'; animateBike(PICKUP, state.selectedDest); renderAll(); }
+    function completeTrip() {
+      clearInterval(moveInterval);
+      state.bikePos = { x: state.selectedDest.x, y: state.selectedDest.y };
+      state.captainEarnings += parseFloat(state.fareJod) * 0.90;
+      state.rideStatus = 'completed';
+      renderAll();
+    }
+    function finishRating() { state.rideStatus = 'idle'; state.selectedDest = null; renderAll(); }
+    function animateBike(from, to) {
+      clearInterval(moveInterval);
+      let step = 0; const total = 35; const sx = from.x, sy = from.y;
+      moveInterval = setInterval(() => {
+        step++;
+        state.bikePos = { x: sx + (to.x - sx) * (step / total), y: sy + (to.y - sy) * (step / total) };
+        drawMaps();
+        if (step >= total) clearInterval(moveInterval);
+      }, 90);
+    }
+    function resetDemo() {
+      clearInterval(moveInterval); clearInterval(countdownInterval);
+      state = { selectedDest: null, captainOnline: false, rideStatus: 'idle', bikePos: { x: 245, y: 110 }, fareJod: 0, carFareJod: 0, savingsPct: 0, captainEarnings: 0, timerSec: 15 };
+      renderAll();
+    }
+    function drawMapSvg(svgId, isCaptain) {
+      const svg = document.getElementById(svgId);
+      const dest = state.selectedDest;
+      let routeLine = '';
+      if (dest && state.rideStatus !== 'accepted') {
+        routeLine += `<line x1="${PICKUP.x}" y1="${PICKUP.y}" x2="${dest.x}" y2="${dest.y}" stroke="#007a3d" stroke-width="5" stroke-linecap="round" stroke-dasharray="${state.rideStatus === 'started' ? '' : '7,5'}" />`;
+      }
+      if (state.rideStatus === 'accepted') {
+        routeLine += `<line x1="${state.bikePos.x}" y1="${state.bikePos.y}" x2="${PICKUP.x}" y2="${PICKUP.y}" stroke="#ce1126" stroke-width="4" stroke-dasharray="6,4" />`;
+      }
+      const bikeMarker = (state.captainOnline || isCaptain) ? `<g transform="translate(${state.bikePos.x - 16}, ${state.bikePos.y - 16})"><circle cx="16" cy="16" r="15" fill="#121212" stroke="#fff" stroke-width="2.5"/><text x="16" y="21" text-anchor="middle" font-size="15">🏍️</text></g>` : '';
+      const destMarker = dest ? `<circle cx="${dest.x}" cy="${dest.y}" r="8" fill="#ce1126" stroke="#fff" stroke-width="2"/><text x="${dest.x}" y="${dest.y - 12}" text-anchor="middle" font-size="11" font-weight="bold" fill="#ce1126">${dest.name}</text>` : '';
+      svg.innerHTML = `<path d="M0,180 Q150,160 320,190" stroke="#ffffff" stroke-width="10" fill="none"/><path d="M160,0 Q180,190 140,380" stroke="#ffffff" stroke-width="10" fill="none"/><path d="M20,40 L290,340" stroke="#f1f5f9" stroke-width="6" fill="none"/><path d="M280,50 L40,320" stroke="#f1f5f9" stroke-width="6" fill="none"/>${routeLine}<circle cx="${PICKUP.x}" cy="${PICKUP.y}" r="8" fill="#007a3d" stroke="#fff" stroke-width="2"/><text x="${PICKUP.x}" y="${PICKUP.y + 20}" text-anchor="middle" font-size="10" font-weight="bold" fill="#121212">${PICKUP.name}</text>${destMarker}${bikeMarker}`;
+    }
+    function drawMaps() { drawMapSvg('client-svg', false); drawMapSvg('captain-svg', true); }
+    function renderClient() {
+      document.getElementById('landmark-chips').innerHTML = LANDMARKS.map(l => `<button class="chip ${state.selectedDest?.id === l.id ? 'active' : ''}" onclick="selectDest('${l.id}')">${l.name}</button>`).join('');
+      const sheet = document.getElementById('client-sheet'), d = state.selectedDest;
+      if (state.rideStatus === 'idle') {
+        sheet.innerHTML = !d ? `<div style="text-align:center; padding:8px 0"><div style="font-weight:bold; font-size:15px">اختر وجهتك في عمّان من الأعلى 👆</div><div class="meta-line" style="margin:4px 0 0">ستظهر لك التسعيرة الأقل مقارنة بتطبيقات السيارات</div></div>`
+          : `<div class="price-row"><div><div class="price-big">${state.fareJod} دينار</div><div class="meta-line" style="margin:0">إلى ${d.name} • ${d.km} كم (~${d.min} د)</div></div><div class="save-badge">وفّر ${state.savingsPct}%<br><small>بدلاً من ${state.carFareJod} د</small></div></div><div style="font-size:11px; color:#333; margin-bottom:10px">🪖 يشمل خوذة أمان إضافية للراكب • الدفع كاش</div><button class="btn" onclick="requestRide()">اطلب دراجة الآن</button>`;
+      } else if (state.rideStatus === 'pending') {
+        sheet.innerHTML = `<div style="text-align:center"><div style="font-weight:bold; margin-bottom:4px">⏳ جاري إرسال الطلب لأقرب كابتن...</div><div class="meta-line">${state.captainOnline ? 'الطلب يرن الآن على هاتف الكابتن!' : 'فعّل اتصال الكابتن في الهاتف الآخر ليستلم الطلب'}</div><button class="btn outline" onclick="cancelRide()">إلغاء الطلب</button></div>`;
+      } else if (state.rideStatus === 'accepted') {
+        sheet.innerHTML = `<div style="font-weight:bold; color:var(--jo-green); font-size:15px">✅ الكابتن أحمد في الطريق إليك!</div><div class="meta-line">Yamaha NMAX • الأجرة: ${state.fareJod} دينار</div><div style="font-size:12px; background:#f1f5f9; padding:8px; border-radius:8px">تابع الدراجة وهي تقترب من موقعك على الخريطة</div>`;
+      } else if (state.rideStatus === 'arrived') {
+        sheet.innerHTML = `<div style="font-weight:bold; color:var(--jo-green); font-size:16px">🏍️ الكابتن أحمد وصل عندك!</div><div class="meta-line">ارتدِ الخوذة الإضافية واستعد للانطلاق</div>`;
+      } else if (state.rideStatus === 'started') {
+        sheet.innerHTML = `<div style="font-weight:bold; color:var(--jo-green); font-size:15px">🚀 الرحلة جارية إلى ${d.name}</div><div class="meta-line">نتمنى لك رحلة آمنة • الأجرة: ${state.fareJod} دينار</div>`;
+      } else if (state.rideStatus === 'completed') {
+        sheet.innerHTML = `<div style="text-align:center"><div style="font-weight:bold; font-size:16px">🏁 وصلت بالسلامة!</div><div class="meta-line">المطلوب للدفع كاش: <b>${state.fareJod} دينار</b></div><button class="btn green" onclick="finishRating()">تقييم ★★★★★ وإنهاء</button></div>`;
+      }
+    }
+    function renderCaptain() {
+      document.getElementById('captain-status-strip').className = 'status-strip' + (state.captainOnline ? ' online' : '');
+      document.getElementById('captain-status-text').innerText = state.captainOnline ? 'متصل الآن' : 'غير متصل';
+      document.getElementById('captain-toggle-btn').innerText = state.captainOnline ? 'إيقاف' : 'تفعيل الاتصال';
+      document.getElementById('captain-earnings').innerText = `صافي اليوم: ${state.captainEarnings.toFixed(2)} د`;
+      const wrap = document.getElementById('captain-incoming-wrap');
+      wrap.innerHTML = (state.captainOnline && state.rideStatus === 'pending' && state.selectedDest)
+        ? `<div class="incoming-card"><div style="display:flex; justify-content:space-between; font-weight:bold; color:var(--jo-red)"><span>🔔 طلب رحلة جديد!</span><span>${state.timerSec} ث</span></div><div style="font-size:13px; margin:6px 0">من: <b>${PICKUP.name}</b> &larr; إلى: <b>${state.selectedDest.name}</b></div><div style="font-size:15px; font-weight:bold; color:var(--jo-green); margin-bottom:10px">الأجرة: ${state.fareJod} د • المسافة: ${state.selectedDest.km} كم</div><button class="btn green" onclick="acceptRide()">قبول الرحلة والانطلاق</button></div>` : '';
+      const sheet = document.getElementById('captain-sheet');
+      if (!state.captainOnline) sheet.innerHTML = `<div style="text-align:center; color:#666; font-size:13px">اضغط <b>تفعيل الاتصال</b> بالأعلى وأكّد الخوذة لاستقبال طلبات عمّان</div>`;
+      else if (state.rideStatus === 'idle' || state.rideStatus === 'pending') sheet.innerHTML = `<div style="text-align:center; color:var(--jo-green); font-weight:bold; font-size:13px">بانتظار طلبات الركاب القريبة منك...</div>`;
+      else if (state.rideStatus === 'accepted') sheet.innerHTML = `<div style="font-weight:bold; margin-bottom:6px">متوجه إلى العميل في ${PICKUP.name}</div><button class="btn black" onclick="markArrived()">وصلت لموقع العميل</button>`;
+      else if (state.rideStatus === 'arrived') sheet.innerHTML = `<div style="font-weight:bold; margin-bottom:6px">العميل بانتظارك — تأكد من الخوذة</div><button class="btn green" onclick="startTrip()">بدء الرحلة الآن</button>`;
+      else if (state.rideStatus === 'started') sheet.innerHTML = `<div style="font-weight:bold; margin-bottom:6px">في الطريق إلى ${state.selectedDest.name}</div><button class="btn" onclick="completeTrip()">إنهاء الرحلة وتحصيل ${state.fareJod} د</button>`;
+      else if (state.rideStatus === 'completed') sheet.innerHTML = `<div style="text-align:center; color:var(--jo-green); font-weight:bold">تمت إضافة +${(parseFloat(state.fareJod) * 0.90).toFixed(2)} دينار لصافي محفظتك!</div>`;
+    }
+    function renderAll() { drawMaps(); renderClient(); renderCaptain(); }
+    let otpStep = 1;
+    function openOtpModal() {
+      otpStep = 1; document.getElementById('sms-banner').style.display = 'none';
+      document.getElementById('otp-input').style.display = 'none';
+      document.getElementById('otp-action-btn').innerText = 'إرسال رمز OTP';
+      document.getElementById('otp-modal').classList.add('show');
+    }
+    function closeOtpModal() { document.getElementById('otp-modal').classList.remove('show'); }
+    function handleOtpStep() {
+      const phone = document.getElementById('jo-phone-input').value.trim();
+      if (otpStep === 1) {
+        if (!/^0?7[789]\d{7}$/.test(phone)) { alert('أدخل رقم أردني صحيح يبدأ بـ 079 أو 078 أو 077'); return; }
+        otpStep = 2; document.getElementById('sms-banner').style.display = 'block';
+        document.getElementById('otp-input').style.display = 'block';
+        document.getElementById('otp-input').value = '482910';
+        document.getElementById('otp-action-btn').innerText = 'تأكيد الرمز والدخول';
+      } else {
+        if (document.getElementById('otp-input').value.trim() === '482910') {
+          document.getElementById('client-phone-label').innerText = 'موثق: +962 ' + phone.replace(/^0/, '');
+          closeOtpModal();
+        } else alert('رمز OTP غير صحيح (الرمز التجريبي هو 482910)');
+      }
+    }
+    renderAll();
+  </script>
+</body>
+  </html>
