@@ -1,0 +1,936 @@
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+function Save-Code($path, $content) {
+  $full = Join-Path $PWD $path
+  $dir = Split-Path $full -Parent
+  if (!(Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  [System.IO.File]::WriteAllText($full, $content.TrimStart("`r", "`n"), $utf8NoBom)
+}
+
+# 1. pubspec.yaml
+Save-Code "nashmi_ride_jordan\pubspec.yaml" @'
+name: jordan_moto_app
+description: تطبيق توصيل بالدراجات النارية في الاردن
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.1
+  http: ^1.2.2
+
+flutter:
+  uses-material-design: true
+'@
+
+# 2. lib/theme/jordan_theme.dart
+Save-Code "nashmi_ride_jordan\lib\theme\jordan_theme.dart" @'
+import 'package:flutter/material.dart';
+
+class JordanColors {
+  static const Color black = Color(0xFF121212);
+  static const Color white = Color(0xFFFFFFFF);
+  static const Color offWhite = Color(0xFFF7F8FA);
+  static const Color red = Color(0xFFCE1126);
+  static const Color green = Color(0xFF007A3D);
+  static const Color grey = Color(0xFF6B7280);
+}
+
+class JordanTheme {
+  static ThemeData get lightTheme {
+    return ThemeData(
+      useMaterial3: true,
+      scaffoldBackgroundColor: JordanColors.offWhite,
+      colorScheme: const ColorScheme.light(
+        primary: JordanColors.red,
+        secondary: JordanColors.green,
+        surface: JordanColors.white,
+        onPrimary: JordanColors.white,
+        onSurface: JordanColors.black,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: JordanColors.red,
+          foregroundColor: JordanColors.white,
+          minimumSize: const Size(double.infinity, 50),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ),
+    );
+  }
+}
+'@
+
+# 3. lib/services/pricing_service.dart
+Save-Code "nashmi_ride_jordan\lib\services\pricing_service.dart" @'
+class FareEstimate {
+  final double distanceKm;
+  final int durationMin;
+  final double motoFareJod;
+  final double carAppsMinFareJod;
+  final double savingsPercent;
+
+  FareEstimate({
+    required this.distanceKm,
+    required this.durationMin,
+    required this.motoFareJod,
+    required this.carAppsMinFareJod,
+    required this.savingsPercent,
+  });
+}
+
+class JordanPricingService {
+  static const double motoBaseFare = 0.25;
+  static const double motoPerKm = 0.16;
+  static const double motoPerMin = 0.03;
+  static const double motoMinFare = 0.85;
+
+  static const double carBaseDay = 0.45;
+  static const double carPerKmDay = 0.316;
+  static const double carPerMinDay = 0.06;
+
+  static FareEstimate calculate({required double distanceKm, required int durationMin}) {
+    double rawMoto = motoBaseFare + (distanceKm * motoPerKm) + (durationMin * motoPerMin);
+    double finalMoto = rawMoto < motoMinFare ? motoMinFare : rawMoto;
+    finalMoto = (finalMoto * 20).round() / 20.0;
+
+    double carFare = carBaseDay + (distanceKm * carPerKmDay) + (durationMin * carPerMinDay);
+    if (carFare < 1.50) carFare = 1.50;
+    double savings = ((carFare - finalMoto) / carFare) * 100;
+
+    return FareEstimate(
+      distanceKm: double.parse(distanceKm.toStringAsFixed(1)),
+      durationMin: durationMin,
+      motoFareJod: double.parse(finalMoto.toStringAsFixed(2)),
+      carAppsMinFareJod: double.parse(carFare.toStringAsFixed(2)),
+      savingsPercent: savings > 0 ? savings.roundToDouble() : 0,
+    );
+  }
+}
+'@
+
+# 4. lib/services/routing_service.dart
+Save-Code "nashmi_ride_jordan\lib\services\routing_service.dart" @'
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
+
+class RouteResult {
+  final List<LatLng> points;
+  final double distanceKm;
+  final int durationMin;
+  RouteResult({required this.points, required this.distanceKm, required this.durationMin});
+}
+
+class RoutingService {
+  static Future<RouteResult> getRoute(LatLng start, LatLng end) async {
+    final url = Uri.parse(
+      'https://router.project-osrm.org/route/v1/driving/'
+      '${start.longitude},${start.latitude};${end.longitude},${end.latitude}'
+      '?overview=full&geometries=geojson',
+    );
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 6));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final route = data['routes'][0];
+        final double distKm = (route['distance'] as num).toDouble() / 1000.0;
+        final int durMin = ((route['duration'] as num).toDouble() / 60.0 * 0.85).ceil();
+        final coords = route['geometry']['coordinates'] as List;
+        final points = coords.map((c) => LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
+        return RouteResult(points: points, distanceKm: distKm, durationMin: durMin < 3 ? 3 : durMin);
+      }
+    } catch (_) {}
+    const distance = Distance();
+    final directKm = distance.as(LengthUnit.Kilometer, start, end) * 1.25;
+    return RouteResult(points: [start, end], distanceKm: directKm < 0.5 ? 0.5 : directKm, durationMin: (directKm * 2.5).ceil());
+  }
+}
+'@
+
+# 5. lib/services/jordan_phone_helper.dart
+Save-Code "nashmi_ride_jordan\lib\services\jordan_phone_helper.dart" @'
+class JordanPhoneHelper {
+  static String? formatToE164(String input) {
+    String cleaned = input.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    if (cleaned.startsWith('+962')) cleaned = cleaned.substring(4);
+    else if (cleaned.startsWith('00962')) cleaned = cleaned.substring(5);
+    else if (cleaned.startsWith('962')) cleaned = cleaned.substring(3);
+    if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+    if (!RegExp(r'^7[789]\d{7}$').hasMatch(cleaned)) return null;
+    return '+962$cleaned';
+  }
+}
+'@
+
+# 6. lib/widgets/jordan_flag_banner.dart
+Save-Code "nashmi_ride_jordan\lib\widgets\jordan_flag_banner.dart" @'
+import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import '../theme/jordan_theme.dart';
+
+class JordanFlagHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+
+  const JordanFlagHeader({super.key, required this.title, required this.subtitle, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: JordanColors.black,
+        border: Border(bottom: BorderSide(color: JordanColors.green, width: 4)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 32, clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: Colors.white24)),
+            child: Stack(
+              children: [
+                Column(children: [
+                  Expanded(child: Container(color: JordanColors.black)),
+                  Expanded(child: Container(color: JordanColors.white)),
+                  Expanded(child: Container(color: JordanColors.green)),
+                ]),
+                ClipPath(
+                  clipper: _TriangleClipper(),
+                  child: Container(
+                    width: 24, color: JordanColors.red, alignment: const Alignment(-0.4, 0),
+                    child: CustomPaint(size: const Size(10, 10), painter: _SevenPointStarPainter()),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(color: JordanColors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              ],
+            ),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+class _TriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) => Path()..moveTo(0, 0)..lineTo(size.width, size.height / 2)..lineTo(0, size.height)..close();
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _SevenPointStarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = JordanColors.white;
+    final path = Path();
+    final cx = size.width / 2, cy = size.height / 2, outerR = size.width / 2, innerR = outerR * 0.45;
+    for (int i = 0; i < 14; i++) {
+      final r = i.isEven ? outerR : innerR;
+      final angle = (math.pi / 7) * i - math.pi / 2;
+      final x = cx + r * math.cos(angle), y = cy + r * math.sin(angle);
+      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+'@
+
+# 7. lib/screens/phone_login_screen.dart
+Save-Code "nashmi_ride_jordan\lib\screens\phone_login_screen.dart" @'
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import '../services/jordan_phone_helper.dart';
+import '../theme/jordan_theme.dart';
+import '../widgets/jordan_flag_banner.dart';
+import 'captain_home_screen.dart';
+import 'client_home_screen.dart';
+
+class PhoneLoginScreen extends StatefulWidget {
+  const PhoneLoginScreen({super.key});
+  @override
+  State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
+}
+
+class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+  final _bikeModelCtrl = TextEditingController();
+  final _plateCtrl = TextEditingController();
+
+  String _selectedRole = 'client';
+  bool _codeSent = false;
+  bool _isLoading = false;
+  String? _verificationId;
+  int? _resendToken;
+  String? _formattedPhone;
+  String? _errorMsg;
+  int _secondsLeft = 60;
+  Timer? _timer;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _nameCtrl.dispose(); _phoneCtrl.dispose(); _otpCtrl.dispose();
+    _bikeModelCtrl.dispose(); _plateCtrl.dispose();
+    super.dispose();
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
+    setState(() => _secondsLeft = 60);
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (_secondsLeft == 0) t.cancel(); else setState(() => _secondsLeft--);
+    });
+  }
+
+  Future<void> _sendOtp({bool isResend = false}) async {
+    setState(() => _errorMsg = null);
+    if (_nameCtrl.text.trim().length < 2) {
+      setState(() => _errorMsg = 'يرجى إدخال الاسم الكامل');
+      return;
+    }
+    if (_selectedRole == 'captain' && (_bikeModelCtrl.text.trim().isEmpty || _plateCtrl.text.trim().isEmpty)) {
+      setState(() => _errorMsg = 'أدخل نوع الدراجة ورقم اللوحة لتوثيق الكابتن');
+      return;
+    }
+    final e164 = JordanPhoneHelper.formatToE164(_phoneCtrl.text.trim());
+    if (e164 == null) {
+      setState(() => _errorMsg = 'أدخل رقم أردني صحيح يبدأ بـ 079 أو 078 أو 077');
+      return;
+    }
+    setState(() { _isLoading = true; _formattedPhone = e164; });
+
+    await FirebaseAuth.instance.verifyPhoneNumber(
+      phoneNumber: e164,
+      timeout: const Duration(seconds: 60),
+      forceResendingToken: isResend ? _resendToken : null,
+      verificationCompleted: (cred) async => await _signInWithCredential(cred),
+      verificationFailed: (e) => setState(() { _isLoading = false; _errorMsg = 'تعذر الإرسال: ${e.message}'; }),
+      codeSent: (vId, token) {
+        setState(() { _verificationId = vId; _resendToken = token; _codeSent = true; _isLoading = false; });
+        _startCountdown();
+      },
+      codeAutoRetrievalTimeout: (vId) => _verificationId = vId,
+    );
+  }
+
+  Future<void> _verifyOtpCode() async {
+    final code = _otpCtrl.text.trim();
+    if (code.length != 6 || _verificationId == null) {
+      setState(() => _errorMsg = 'أدخل رمز OTP المكون من 6 أرقام');
+      return;
+    }
+    setState(() { _isLoading = true; _errorMsg = null; });
+    await _signInWithCredential(PhoneAuthProvider.credential(verificationId: _verificationId!, smsCode: code));
+  }
+
+  Future<void> _signInWithCredential(PhoneAuthCredential credential) async {
+    try {
+      final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final uid = userCred.user!.uid;
+      await FirebaseFirestore.instance.collection('users').doc(uid).set({
+        'uid': uid,
+        'name': _nameCtrl.text.trim(),
+        'phone': _formattedPhone,
+        'role': _selectedRole,
+        'phoneVerified': true,
+        if (_selectedRole == 'captain') ...{
+          'bikeModel': _bikeModelCtrl.text.trim(),
+          'plateNumber': _plateCtrl.text.trim(),
+          'captainVerified': true,
+        },
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      if (!mounted) return;
+      Navigator.pushReplacement(context, MaterialPageRoute(
+        builder: (_) => _selectedRole == 'captain' ? const CaptainHomeScreen() : const ClientHomeScreen(),
+      ));
+    } on FirebaseAuthException catch (e) {
+      setState(() { _isLoading = false; _errorMsg = 'فشل التحقق: ${e.message}'; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            const JordanFlagHeader(title: 'تسجيل الدخول - الأردن', subtitle: 'التحقق عبر رقم الهاتف الأردني (OTP)'),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!_codeSent) ...[
+                      Row(children: [
+                        Expanded(child: _roleCard('client', 'عميل (راكب)', Icons.person)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _roleCard('captain', 'كابتن (دراجة)', Icons.sports_motorsports)),
+                      ]),
+                      const SizedBox(height: 16),
+                      TextField(controller: _nameCtrl, decoration: const InputDecoration(labelText: 'الاسم الكامل', border: OutlineInputBorder())),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _phoneCtrl, keyboardType: TextInputType.phone, textDirection: TextDirection.ltr,
+                        decoration: const InputDecoration(labelText: 'رقم الهاتف الأردني', hintText: '079XXXXXXX', prefixText: '+962 ', border: OutlineInputBorder()),
+                      ),
+                      if (_selectedRole == 'captain') ...[
+                        const SizedBox(height: 12),
+                        TextField(controller: _bikeModelCtrl, decoration: const InputDecoration(labelText: 'نوع الدراجة', border: OutlineInputBorder())),
+                        const SizedBox(height: 12),
+                        TextField(controller: _plateCtrl, decoration: const InputDecoration(labelText: 'رقم اللوحة', border: OutlineInputBorder())),
+                      ],
+                    ] else ...[
+                      Text('تم إرسال OTP إلى $_formattedPhone', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 16),
+                      TextField(controller: _otpCtrl, keyboardType: TextInputType.number, maxLength: 6, textAlign: TextAlign.center,
+                        decoration: const InputDecoration(labelText: 'أدخل الرمز (6 أرقام)', border: OutlineInputBorder())),
+                      TextButton(
+                        onPressed: _secondsLeft == 0 && !_isLoading ? () => _sendOtp(isResend: true) : null,
+                        child: Text(_secondsLeft > 0 ? 'إعادة الإرسال خلال $_secondsLeft ث' : 'إعادة إرسال الرمز'),
+                      ),
+                    ],
+                    if (_errorMsg != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_errorMsg!, style: const TextStyle(color: JordanColors.red, fontWeight: FontWeight.bold))),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: _codeSent ? JordanColors.green : JordanColors.red),
+                      onPressed: _isLoading ? null : (_codeSent ? _verifyOtpCode : _sendOtp),
+                      child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : Text(_codeSent ? 'تأكيد والدخول' : 'إرسال رمز OTP'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _roleCard(String role, String title, IconData icon) {
+    final sel = _selectedRole == role;
+    return InkWell(
+      onTap: () => setState(() => _selectedRole = role),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: sel ? JordanColors.green.withOpacity(0.12) : JordanColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: sel ? JordanColors.green : Colors.grey.shade300, width: sel ? 2 : 1),
+        ),
+        child: Column(children: [
+          Icon(icon, color: sel ? JordanColors.green : JordanColors.black),
+          const SizedBox(height: 4),
+          Text(title, style: TextStyle(fontWeight: FontWeight.bold, color: sel ? JordanColors.green : JordanColors.black)),
+        ]),
+      ),
+    );
+  }
+}
+'@
+
+# 8. lib/screens/client_home_screen.dart
+Save-Code "nashmi_ride_jordan\lib\screens\client_home_screen.dart" @'
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import '../services/pricing_service.dart';
+import '../services/routing_service.dart';
+import '../theme/jordan_theme.dart';
+import '../widgets/jordan_flag_banner.dart';
+
+class ClientHomeScreen extends StatefulWidget {
+  const ClientHomeScreen({super.key});
+  @override
+  State<ClientHomeScreen> createState() => _ClientHomeScreenState();
+}
+
+class _ClientHomeScreenState extends State<ClientHomeScreen> {
+  final MapController _mapController = MapController();
+  final String _clientId = FirebaseAuth.instance.currentUser!.uid;
+
+  LatLng _pickup = const LatLng(31.9631, 35.9102);
+  LatLng? _dropoff;
+  List<LatLng> _routePoints = [];
+  FareEstimate? _estimate;
+  String? _activeRideId;
+  bool _isLoadingRoute = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _detectMyLocation();
+  }
+
+  Future<void> _detectMyLocation() async {
+    try {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.always || perm == LocationPermission.whileInUse) {
+        final pos = await Geolocator.getCurrentPosition();
+        setState(() => _pickup = LatLng(pos.latitude, pos.longitude));
+        _mapController.move(_pickup, 14.5);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onMapTap(TapPosition _, LatLng point) async {
+    if (_activeRideId != null) return;
+    setState(() { _dropoff = point; _isLoadingRoute = true; });
+    final route = await RoutingService.getRoute(_pickup, point);
+    final est = JordanPricingService.calculate(distanceKm: route.distanceKm, durationMin: route.durationMin);
+    setState(() { _routePoints = route.points; _estimate = est; _isLoadingRoute = false; });
+  }
+
+  Future<void> _requestRide() async {
+    if (_dropoff == null || _estimate == null) return;
+    final doc = FirebaseFirestore.instance.collection('rides').doc();
+    await doc.set({
+      'rideId': doc.id, 'clientId': _clientId, 'captainId': null, 'captainName': null,
+      'pickupLat': _pickup.latitude, 'pickupLng': _pickup.longitude,
+      'dropoffLat': _dropoff!.latitude, 'dropoffLng': _dropoff!.longitude,
+      'distanceKm': _estimate!.distanceKm, 'durationMin': _estimate!.durationMin,
+      'fareJod': _estimate!.motoFareJod, 'status': 'pending', 'createdAt': FieldValue.serverTimestamp(),
+    });
+    setState(() => _activeRideId = doc.id);
+  }
+
+  Future<void> _cancelRide() async {
+    if (_activeRideId == null) return;
+    await FirebaseFirestore.instance.collection('rides').doc(_activeRideId).update({'status': 'cancelled'});
+    setState(() { _activeRideId = null; _dropoff = null; _routePoints = []; _estimate = null; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            JordanFlagHeader(
+              title: 'نشمي رايد - العميل',
+              subtitle: 'توصيل سريع وأقل تسعيرة في الأردن',
+              trailing: IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => FirebaseAuth.instance.signOut()),
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance.collection('captains_online').where('isBusy', isEqualTo: false).snapshots(),
+                    builder: (context, snapshot) {
+                      final markers = <Marker>[];
+                      if (snapshot.hasData) {
+                        for (var doc in snapshot.data!.docs) {
+                          final d = doc.data() as Map<String, dynamic>;
+                          markers.add(Marker(point: LatLng(d['lat'], d['lng']), width: 40, height: 40,
+                            child: const CircleAvatar(backgroundColor: JordanColors.black, child: Icon(Icons.two_wheeler, color: Colors.white, size: 20))));
+                        }
+                      }
+                      return FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(initialCenter: _pickup, initialZoom: 14.0, onTap: _onMapTap),
+                        children: [
+                          TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.jordan.moto.app'),
+                          if (_routePoints.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _routePoints, color: JordanColors.green, strokeWidth: 5)]),
+                          MarkerLayer(markers: [
+                            ...markers,
+                            Marker(point: _pickup, width: 44, height: 44, child: const Icon(Icons.person_pin_circle, color: JordanColors.green, size: 40)),
+                            if (_dropoff != null) Marker(point: _dropoff!, width: 44, height: 44, child: const Icon(Icons.flag, color: JordanColors.red, size: 38)),
+                          ]),
+                        ],
+                      );
+                    },
+                  ),
+                  Positioned(
+                    top: 12, left: 12,
+                    child: FloatingActionButton.small(
+                      backgroundColor: JordanColors.red,
+                      onPressed: () => showDialog(context: context, builder: (_) => const AlertDialog(title: Text('طوارئ 911'), content: Text('اتصل بالطوارئ 911 عند الحاجة.'))),
+                      child: const Text('SOS', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  Positioned(bottom: 0, left: 0, right: 0, child: _activeRideId == null ? _buildRequestSheet() : _buildActiveSheet()),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRequestSheet() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      child: _dropoff == null
+          ? const Text('اضغط على الخريطة لتحديد وجهتك', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))
+          : _isLoadingRoute
+              ? const Center(child: CircularProgressIndicator(color: JordanColors.green))
+              : Column(mainAxisSize: MainAxisSize.min, children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    Text('${_estimate!.motoFareJod.toStringAsFixed(2)} دينار', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: JordanColors.green)),
+                    Text('وفر ${_estimate!.savingsPercent.toInt()}% عن السيارات', style: const TextStyle(color: JordanColors.green, fontWeight: FontWeight.bold)),
+                  ]),
+                  const SizedBox(height: 8),
+                  ElevatedButton(onPressed: _requestRide, child: const Text('اطلب دراجة الآن')),
+                ]),
+    );
+  }
+
+  Widget _buildActiveSheet() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('rides').doc(_activeRideId).snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData || !snap.data!.exists) return const SizedBox.shrink();
+        final r = snap.data!.data() as Map<String, dynamic>;
+        final s = r['status'] as String;
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('حالة الرحلة: $s • الأجرة: ${r['fareJod']} د', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 10),
+            if (s == 'pending') OutlinedButton(onPressed: _cancelRide, child: const Text('إلغاء الطلب')),
+            if (s == 'completed') ElevatedButton(onPressed: () => setState(() { _activeRideId = null; _dropoff = null; _routePoints = []; _estimate = null; }), child: const Text('إنهاء')),
+          ]),
+        );
+      },
+    );
+  }
+}
+'@
+
+# 9. lib/screens/captain_home_screen.dart
+Save-Code "nashmi_ride_jordan\lib\screens\captain_home_screen.dart" @'
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
+import '../services/routing_service.dart';
+import '../theme/jordan_theme.dart';
+import '../widgets/jordan_flag_banner.dart';
+
+class CaptainHomeScreen extends StatefulWidget {
+  const CaptainHomeScreen({super.key});
+  @override
+  State<CaptainHomeScreen> createState() => _CaptainHomeScreenState();
+}
+
+class _CaptainHomeScreenState extends State<CaptainHomeScreen> {
+  final String _captainId = FirebaseAuth.instance.currentUser!.uid;
+  final MapController _mapController = MapController();
+
+  bool _isOnline = false;
+  LatLng _myLocation = const LatLng(31.9600, 35.9150);
+  String? _activeRideId;
+  List<LatLng> _activeRoute = [];
+  double _todayEarnings = 0.0;
+  StreamSubscription<Position>? _posSub;
+
+  @override
+  void dispose() { _posSub?.cancel(); super.dispose(); }
+
+  Future<void> _toggleOnline(bool val) async {
+    if (val) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('تأكيد السلامة'),
+          content: const Text('هل ترتدي الخوذة وتتوفر معك خوذة للراكب؟'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('لا')),
+            ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('نعم')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await _startLocation();
+      await FirebaseFirestore.instance.collection('captains_online').doc(_captainId).set({
+        'captainId': _captainId, 'name': 'كابتن نشمي', 'lat': _myLocation.latitude, 'lng': _myLocation.longitude, 'isBusy': false,
+      });
+    } else {
+      _posSub?.cancel();
+      await FirebaseFirestore.instance.collection('captains_online').doc(_captainId).delete();
+    }
+    setState(() => _isOnline = val);
+  }
+
+  Future<void> _startLocation() async {
+    try {
+      LocationPermission p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+      if (p == LocationPermission.always || p == LocationPermission.whileInUse) {
+        final pos = await Geolocator.getCurrentPosition();
+        setState(() => _myLocation = LatLng(pos.latitude, pos.longitude));
+        _mapController.move(_myLocation, 15);
+        _posSub = Geolocator.getPositionStream(locationSettings: const LocationSettings(distanceFilter: 15)).listen((pt) {
+          setState(() => _myLocation = LatLng(pt.latitude, pt.longitude));
+          if (_isOnline) FirebaseFirestore.instance.collection('captains_online').doc(_captainId).update({'lat': pt.latitude, 'lng': pt.longitude});
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _acceptRide(Map<String, dynamic> ride) async {
+    final id = ride['rideId'] as String;
+    await FirebaseFirestore.instance.collection('rides').doc(id).update({'status': 'accepted', 'captainId': _captainId, 'captainName': 'كابتن نشمي'});
+    await FirebaseFirestore.instance.collection('captains_online').doc(_captainId).update({'isBusy': true});
+    final route = await RoutingService.getRoute(_myLocation, LatLng(ride['pickupLat'], ride['pickupLng']));
+    setState(() { _activeRideId = id; _activeRoute = route.points; });
+  }
+
+  Future<void> _updateStatus(String next, Map<String, dynamic> ride) async {
+    await FirebaseFirestore.instance.collection('rides').doc(_activeRideId).update({'status': next});
+    if (next == 'started') {
+      final r = await RoutingService.getRoute(LatLng(ride['pickupLat'], ride['pickupLng']), LatLng(ride['dropoffLat'], ride['dropoffLng']));
+      setState(() => _activeRoute = r.points);
+    } else if (next == 'completed') {
+      final fare = (ride['fareJod'] as num).toDouble();
+      await FirebaseFirestore.instance.collection('captains_online').doc(_captainId).update({'isBusy': false});
+      setState(() { _todayEarnings += fare * 0.90; _activeRideId = null; _activeRoute = []; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            JordanFlagHeader(
+              title: 'نشمي كابتن',
+              subtitle: 'عمولة 10% فقط',
+              trailing: IconButton(icon: const Icon(Icons.logout, color: Colors.white), onPressed: () => FirebaseAuth.instance.signOut()),
+            ),
+            Container(
+              color: _isOnline ? JordanColors.green : JordanColors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Row(children: [
+                  Switch(value: _isOnline, onChanged: _activeRideId == null ? _toggleOnline : null),
+                  Text(_isOnline ? 'متصل' : 'غير متصل', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ]),
+                Text('الأرباح: ${_todayEarnings.toStringAsFixed(2)} د', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ]),
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(initialCenter: _myLocation, initialZoom: 14.5),
+                    children: [
+                      TileLayer(urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', userAgentPackageName: 'com.jordan.moto.app'),
+                      if (_activeRoute.isNotEmpty) PolylineLayer(polylines: [Polyline(points: _activeRoute, color: JordanColors.red, strokeWidth: 5)]),
+                      MarkerLayer(markers: [Marker(point: _myLocation, width: 44, height: 44, child: const CircleAvatar(backgroundColor: JordanColors.black, child: Icon(Icons.two_wheeler, color: Colors.white)))]),
+                    ],
+                  ),
+                  if (_isOnline && _activeRideId == null)
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance.collection('rides').where('status', isEqualTo: 'pending').snapshots(),
+                      builder: (c, s) {
+                        if (!s.hasData || s.data!.docs.isEmpty) return const SizedBox.shrink();
+                        final ride = s.data!.docs.first.data() as Map<String, dynamic>;
+                        return Positioned(
+                          bottom: 16, left: 16, right: 16,
+                          child: Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: JordanColors.red, width: 2)),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Text('طلب جديد • ${ride['fareJod']} دينار (${ride['distanceKm']} كم)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: JordanColors.green), onPressed: () => _acceptRide(ride), child: const Text('قبول الرحلة')),
+                            ]),
+                          ),
+                        );
+                      },
+                    ),
+                  if (_activeRideId != null)
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance.collection('rides').doc(_activeRideId).snapshots(),
+                      builder: (c, s) {
+                        if (!s.hasData || !s.data!.exists) return const SizedBox.shrink();
+                        final r = s.data!.data() as Map<String, dynamic>;
+                        final st = r['status'] as String;
+                        String txt = 'وصلت للعميل', next = 'arrived';
+                        if (st == 'arrived') { txt = 'بدء الرحلة'; next = 'started'; }
+                        else if (st == 'started') { txt = 'إنهاء وتحصيل ${r['fareJod']} د'; next = 'completed'; }
+                        return Positioned(
+                          bottom: 0, left: 0, right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.all(16), color: Colors.white,
+                            child: ElevatedButton(onPressed: () => _updateStatus(next, r), child: Text(txt)),
+                          ),
+                        );
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+'@
+
+# 10. lib/main.dart
+Save-Code "nashmi_ride_jordan\lib\main.dart" @'
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/material.dart';
+import 'screens/captain_home_screen.dart';
+import 'screens/client_home_screen.dart';
+import 'screens/phone_login_screen.dart';
+import 'theme/jordan_theme.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(const JordanMotoApp());
+}
+
+class JordanMotoApp extends StatelessWidget {
+  const JordanMotoApp({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'نشمي رايد الأردن',
+      debugShowCheckedModeBanner: false,
+      theme: JordanTheme.lightTheme,
+      builder: (context, child) => Directionality(textDirection: TextDirection.rtl, child: child!),
+      home: const AuthGate(),
+    );
+  }
+}
+
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, authSnap) {
+        if (authSnap.connectionState == ConnectionState.waiting) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        final user = authSnap.data;
+        if (user == null) return const PhoneLoginScreen();
+        return FutureBuilder<DocumentSnapshot>(
+          future: FirebaseFirestore.instance.collection('users').doc(user.uid).get(),
+          builder: (context, userSnap) {
+            if (!userSnap.hasData) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+            final data = userSnap.data!.data() as Map<String, dynamic>?;
+            if (data == null) return const PhoneLoginScreen();
+            return data['role'] == 'captain' ? const CaptainHomeScreen() : const ClientHomeScreen();
+          },
+        );
+      },
+    );
+  }
+}
+'@
+
+# 11. android/app/src/main/AndroidManifest.xml
+Save-Code "nashmi_ride_jordan\android\app\src\main\AndroidManifest.xml" @'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <application android:label="نشمي رايد" android:name="${applicationName}" android:icon="@mipmap/ic_launcher">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <meta-data android:name="flutterEmbedding" android:value="2" />
+    </application>
+</manifest>
+'@
+
+# 12. android/app/build.gradle.kts
+Save-Code "nashmi_ride_jordan\android\app\build.gradle.kts" @'
+import java.util.Properties
+import java.io.FileInputStream
+
+plugins {
+    id("com.android.application")
+    id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace = "com.jordan.moto.app"
+    compileSdk = 36
+    defaultConfig {
+        applicationId = "com.jordan.moto.app"
+        minSdk = 23
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0.0"
+    }
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias")
+            keyPassword = keystoreProperties.getProperty("keyPassword")
+            storeFile = keystoreProperties.getProperty("storeFile")?.let { file(it) }
+            storePassword = keystoreProperties.getProperty("storePassword")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+        }
+    }
+}
+'@
+
+Compress-Archive -Path "nashmi_ride_jordan" -DestinationPath "nashmi_ride_jordan.zip" -Force
+Write-Host "تم إنشاء جميع الملفات وضغطها بنجاح في: nashmi_ride_jordan.zip"
